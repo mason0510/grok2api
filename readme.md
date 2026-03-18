@@ -145,6 +145,8 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+> 当前默认前台 API Key：`sk-sublb123456`。业务接口现在必须传 `Authorization: Bearer ...`。
+
 <details>
 <summary>支持的请求参数</summary>
 
@@ -394,7 +396,7 @@ curl http://localhost:8000/v1/videos \
 | :-- | :-- | :-- | :-- | :-- |
 | **app** | `app_url` | 应用地址 | 当前 Grok2API 服务的外部访问 URL，用于文件链接访问。 | `""` |
 |  | `app_key` | 后台密码 | 登录 Grok2API 管理后台的密码（必填）。 | `grok2api` |
-|  | `api_key` | API 密钥 | 调用 Grok2API 服务的 Token（可选，支持逗号分隔或数组）。 | `""` |
+|  | `api_key` | API 密钥 | 调用 Grok2API 服务的 Token（前台接口必填，支持逗号分隔或数组）。 | `sk-sublb123456` |
 |  | `function_enabled` | Function 开关 | 是否启用 function 功能玩法。 | `false` |
 |  | `function_key` | Function 密钥 | Function 调用密钥（可选）。 | `""` |
 |  | `image_format` | 图片格式 | 生成的图片格式（url 或 base64）。 | `url` |

@@ -393,7 +393,7 @@ Config file: `data/config.toml`
 | :-- | :-- | :-- | :-- | :-- |
 | **app** | `app_url` | App URL | External base URL used for file links. | `""` |
 |  | `app_key` | Admin password | Login password for admin panel. | `grok2api` |
-|  | `api_key` | API key | Optional API key for access (comma-separated string or array). | `""` |
+|  | `api_key` | API key | Required Bearer token for public API access (comma-separated string or array supported). | `sk-sublb123456` |
 |  | `function_enabled` | Function mode | Enable function pages/features. | `false` |
 |  | `function_key` | Function key | Access key for function endpoints/pages (optional). | `""` |
 |  | `image_format` | Image format | `url` or `base64`. | `url` |

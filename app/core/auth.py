@@ -9,7 +9,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.config import get_config
 
-DEFAULT_API_KEY = ""
+DEFAULT_API_KEY = "sk-sublb123456"
 DEFAULT_APP_KEY = "grok2api"
 DEFAULT_FUNCTION_KEY = ""
 DEFAULT_FUNCTION_ENABLED = False
@@ -26,10 +26,13 @@ def get_admin_api_key() -> str:
     """
     获取后台 API Key。
 
-    为空时表示不启用后台接口认证。
+    空配置时回退到内置默认值，保证前台接口始终启用 Bearer 鉴权。
     """
     api_key = get_config("app.api_key", DEFAULT_API_KEY)
-    return api_key or ""
+    if isinstance(api_key, str):
+        normalized = api_key.strip()
+        return normalized or DEFAULT_API_KEY
+    return api_key or DEFAULT_API_KEY
 
 
 def _normalize_api_keys(value: Optional[object]) -> list[str]:
@@ -93,12 +96,12 @@ async def verify_api_key(
     """
     验证 Bearer Token
 
-    如果 config.toml 中未配置 api_key，则不启用认证。
+    前台接口始终要求 Bearer Token。
     """
     api_key = get_admin_api_key()
     api_keys = _normalize_api_keys(api_key)
     if not api_keys:
-        return None
+        api_keys = [DEFAULT_API_KEY]
 
     if not auth:
         raise HTTPException(
