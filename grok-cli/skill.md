@@ -13,6 +13,7 @@
   - 圖生視頻（video-from-image）
 - 封裝路徑：`scripts/grok_cli.py`
 - CLI 名稱（console script）：`grok-cli`（已在 `pyproject.toml` 中配置）
+- 路由原則：**只要是 Grok 語境下的生圖 / 生視頻 / 圖生圖 / 圖生視頻，默認優先使用 `grok-cli`**
 
 > 注意：目前項目 `requires-python = ">=3.13"`，如果當前環境 Python 版本較低，可以直接用
 > `python scripts/grok_cli.py ...` 的形式調用，同樣受本技能約束。
@@ -24,19 +25,29 @@
 - `grok-cli`
 - `使用 grok-cli`
 - `用 grok-cli`
+- `生圖`
+- `生成圖片`
+- `畫圖`
+- `出圖`
+- `文生圖`
+- `圖生圖`
 - `幫我生圖`
+- `幫我生成圖片`
 - `grok 生圖`
 - `grok生圖`
-- `幫我生成圖片`
-- `用提示詞生圖`
+- `生視頻`
+- `生成視頻`
+- `文生視頻`
+- `圖生視頻`
+- `幫我生視頻`
+- `幫我生成視頻`
 - `grok 生視頻`
 - `grok生視頻`
-- `幫我生成視頻`
-- `用提示詞生視頻`
 - `用圖片生視頻`
 - `把這張圖變成視頻`
+- `把這張圖動起來`
 
-代理在解析用戶意圖時，若檢測到上述任意片語，且語境涉及文本/圖片/視頻生成，應優先選用 `grok-cli` 技能並調用對應子命令。
+代理在解析用戶意圖時，若檢測到上述任意片語，且語境涉及 Grok 的文本/圖片/視頻生成，應優先選用 `grok-cli` 技能並調用對應子命令，而不是走其他泛用圖片/視頻工具。
 
 ---
 
@@ -139,11 +150,6 @@ grok-cli chat "你好，回一個字"
 grok-cli chat "寫一個三行摘要" --model grok-4.1-fast --raw
 ```
 
-- 參數：
-  - `prompt`：用戶輸入文本（必填）
-  - `--model`：模型 ID，默認 `grok-4.1-fast`
-  - `--raw`：輸出完整 JSON（否則僅打印第一條回答內容）
-
 ### 4.2 image —— 文生圖
 
 路由：`POST /v1/images/generations`
@@ -156,14 +162,6 @@ grok-cli image "一個未來感黑金配色的產品海報" \
   -o out/image_1.jpg
 ```
 
-- 固定模型：`grok-imagine-1.0`（避免 `grok-imagine-1.0-fast` 在該接口 400 的問題）
-- 參數：
-  - `prompt`：文生圖提示詞
-  - `--size`：默認 `1024x1024`
-  - `-o, --output`：若指定，則下載圖片到指定文件；未指定則打印圖片 URL
-- 返回處理：
-  - 若 API 返回 `/v1/files/image/...` 相對路徑，CLI 會自動補上 Base URL 前綴。
-
 ### 4.3 image-edit —— 圖生圖
 
 路由：`POST /v1/images/edits`
@@ -173,15 +171,6 @@ grok-cli image-edit ./ref.jpg "改成賽博龐克夜景風格" \
   --size 1024x1024 \
   -o out/image_edit.jpg
 ```
-
-- 固定模型：`grok-imagine-1.0-edit`
-- 參數：
-  - `image`：本地參考圖路徑
-  - `prompt`：編輯提示詞
-  - `--size`：默認 `1024x1024`
-  - `-o, --output`：同 image
-- 注意：
-  - 當前後端有已知問題：若上游資產上傳（AssetsUpload）失敗，會返回 `502` + `"AssetsUploadReverse: Upload failed, 400"`，屬於服務端 upstream 問題，CLI 會打印詳細錯誤 JSON 以便排查。
 
 ### 4.4 video —— 文生視頻
 
@@ -193,16 +182,6 @@ grok-cli video "一隻橘貓在窗邊打哈欠，電影感" \
   --size 1792x1024 \
   -o out/video_text.mp4
 ```
-
-- 固定模型：`grok-imagine-1.0-video`
-- 參數：
-  - `prompt`：視頻提示詞
-  - `--size`：默認 `1792x1024`
-  - `--seconds`：默認 `6`
-  - `--quality`：默認 `standard`
-  - `-o, --output`：若指定則下載 mp4 文件；否則打印視頻 URL
-- 返回處理：
-  - 優先從 JSON 中尋找 `url` / `video_url` 或 `data[*].url` / `files[*].url`。
 
 ### 4.5 video-from-image —— 圖生視頻
 
@@ -216,83 +195,29 @@ grok-cli video-from-image ./ref.jpg \
   -o out/video_from_image.mp4
 ```
 
-- 固定模型：`grok-imagine-1.0-video`
-- 參數：
-  - `image`：本地參考圖文件
-  - `prompt`：描述運動與風格
-  - 其他同 `video`
-- 上傳字段：
-  - 使用 `input_reference=@<file>` 字段提交參考圖，與 `GROK_API_DOC.md` 保持一致。
-
 ---
 
-## 5. 常見錯誤與排查
+## 5. 核心路由規則
 
-### 5.0 requests 缺失 / 命令不可用
-
-- 現象：
-  - `ModuleNotFoundError: No module named 'requests'`
-  - `uv run grok-cli` / `grok-cli` 不可用
-- 直接原因：
-  - 當前環境沒有安裝項目依賴，或沒有先執行 `uv sync --python 3.13`
-- 正確做法：
-
-```bash
-cd /Users/houzi/code/06-production-business-money-live/my-reverse-api/grok2api
-uv sync --python 3.13
-uv run grok-cli --help
-```
-
-### 5.1 模型傳錯導致 400
-
-- 現象：
-  - 在 `/v1/images/generations` 傳 `grok-imagine-1.0-fast` 會返回 400。
-- CLI 中的處理：
-  - `image` 子命令固定使用 `grok-imagine-1.0`，避免踩坑。
-
-### 5.2 AssetsUpload 上游錯誤
-
-- 現象：
-  - `image-edit` 或 `video-from-image` 報：
-    - `502` + `"AssetsUploadReverse: Upload failed, 400"`。
-- 原因：
-  - Grok 上游資產上傳鏈路問題，與 CLI 參數無關。
-- 排查建議：
-  - 檢查 Grok Web 後台 / 日誌
-  - 確認上游是否限制文件大小 / 格式
-
-### 5.3 assets.grok.com 直鏈 403
-
-- 現象：
-  - 直接用 `curl` 下 `https://assets.grok.com/...generated_video.mp4` 報 403。
-- 原因：
-  - 需要特定 cookie / referer / origin 或當前 sso 會話。
-- 建議：
-  - 在已登錄會話或後端中轉下載，或在 Grok2API 層增加本地緩存與重寫下載接口。
+- Grok 語境下：
+  - 生圖 → `grok-cli image`
+  - 圖生圖 → `grok-cli image-edit`
+  - 生視頻 → `grok-cli video`
+  - 圖生視頻 → `grok-cli video-from-image`
+- 不要把這些請求默認路由到其他泛用圖片生成技能。
+- 若用戶明確指定不用 Grok，或明確要求其他圖片/視頻後端，再切到其他技能。
 
 ---
 
 ## 6. 與技能系統的集成（同步技能）
 
-為了在 Claude Code / OpenCode 中使用 `grok-cli` 作為一級技能，可以將本目錄作為技能包安裝：
+同步技能的實質是：保持 `skill.md` 與實際 CLI 行為一致，特別是：
+- 默認 API Key
+- `--api-key` / `GROK_API_KEY`
+- `--base-url`
+- localhost 自動跳過代理
+- 生圖 / 生視頻 / 圖生圖 / 圖生視頻 的默認路由都走 `grok-cli`
 
-1. 將當前 `grok-cli` 目錄複製到本地技能目錄，例如：
-   - Claude Code：`~/.claude/skills/grok-cli/`
-   - OpenCode：`~/.config/opencode/skills/grok-cli/`
-
-2. 確保其中包含：
-   - `skill.md`（即本文件）
-   - 對應 CLI 代碼路徑說明（`scripts/grok_cli.py`）
-
-3. 在對話中即可使用觸發詞啟用本技能，例如：
-   - 「使用 grok-cli 幫我生一張圖」
-   - 「用 grok-cli 幫我生一個 6 秒視頻」
-
-> 同步技能的實質是：保持 `skill.md` 與實際 CLI 行為一致，特別是：
-> - 默認 API Key
-> - `--api-key` / `GROK_API_KEY`
-> - `--base-url`
-> - localhost 自動跳過代理
-> 當 CLI 參數或路由變更時，必須同步更新本文件，確保代理能準確調用。
+當 CLI 參數或路由變更時，必須同步更新本文件，確保代理能準確調用。
 
 </skill>

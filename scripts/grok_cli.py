@@ -87,6 +87,33 @@ def build_download_headers(url: str, args: argparse.Namespace) -> Optional[Dict[
     return None
 
 
+def normalize_output_url(raw_url: str, base_url: str) -> str:
+    raw = (raw_url or "").strip()
+    if not raw:
+        return raw
+
+    parsed_base = urlparse(base_url)
+    base_origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+    base_path = parsed_base.path.rstrip("/")
+
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        if raw.startswith("/"):
+            return f"{base_origin}{raw}"
+        return raw
+
+    if (
+        parsed.scheme == parsed_base.scheme
+        and parsed.netloc == parsed_base.netloc
+        and base_path
+    ):
+        duplicated_prefix = f"{base_path}{base_path}/"
+        if parsed.path.startswith(duplicated_prefix):
+            return parsed._replace(path=parsed.path[len(base_path):]).geturl()
+
+    return raw
+
+
 def print_json(data: Any) -> None:
     json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
@@ -141,10 +168,7 @@ def cmd_image(args: argparse.Namespace) -> None:
         return
 
     first_url = urls[0]
-    full_url = first_url
-    # If API returns a relative /v1/files/image/ path, prefix host
-    if first_url.startswith("/"):
-        full_url = f"{base}{first_url}"
+    full_url = normalize_output_url(first_url, base)
 
     if args.output:
         _download_file(full_url, Path(args.output), headers=build_download_headers(full_url, args))
@@ -183,9 +207,7 @@ def cmd_image_edit(args: argparse.Namespace) -> None:
         return
 
     first_url = urls[0]
-    full_url = first_url
-    if first_url.startswith("/"):
-        full_url = f"{base}{first_url}"
+    full_url = normalize_output_url(first_url, base)
 
     if args.output:
         _download_file(full_url, Path(args.output), headers=build_download_headers(full_url, args))
@@ -215,6 +237,7 @@ def cmd_video(args: argparse.Namespace) -> None:
     if not video_url:
         print_json(data)
         return
+    video_url = normalize_output_url(video_url, base)
 
     if args.output:
         _download_file(video_url, Path(args.output), headers=build_download_headers(video_url, args))
@@ -252,6 +275,7 @@ def cmd_video_from_image(args: argparse.Namespace) -> None:
     if not video_url:
         print_json(body)
         return
+    video_url = normalize_output_url(video_url, base)
 
     if args.output:
         _download_file(video_url, Path(args.output), headers=build_download_headers(video_url, args))
