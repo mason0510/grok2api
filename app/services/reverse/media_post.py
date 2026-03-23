@@ -10,8 +10,8 @@ from app.core.logger import logger
 from app.core.config import get_config
 from app.core.proxy_pool import (
     build_http_proxies,
-    get_current_proxy_from,
-    rotate_proxy,
+    get_token_bound_proxy_from,
+    rotate_proxy_for_token,
     should_rotate_proxy,
 )
 from app.core.exceptions import UpstreamException
@@ -67,7 +67,7 @@ class MediaPostReverse:
 
             async def _do_request():
                 nonlocal active_proxy_key
-                active_proxy_key, proxy_url = get_current_proxy_from("proxy.base_proxy_url")
+                active_proxy_key, proxy_url = await get_token_bound_proxy_from(token, "proxy.base_proxy_url")
                 proxies = build_http_proxies(proxy_url)
                 response = await session.post(
                     MEDIA_POST_API,
@@ -97,7 +97,7 @@ class MediaPostReverse:
 
             async def _on_retry(attempt: int, status_code: int, error: Exception, delay: float):
                 if active_proxy_key and should_rotate_proxy(status_code):
-                    rotate_proxy(active_proxy_key)
+                    await rotate_proxy_for_token(active_proxy_key, token)
 
             return await retry_on_status(_do_request, on_retry=_on_retry)
 

@@ -9,7 +9,7 @@ from curl_cffi.requests import AsyncSession
 
 from app.core.logger import logger
 from app.core.config import get_config
-from app.core.proxy_pool import get_current_proxy_from, rotate_proxy, should_rotate_proxy
+from app.core.proxy_pool import get_token_bound_proxy_from, rotate_proxy_for_token, should_rotate_proxy
 from app.core.exceptions import UpstreamException
 from app.services.token.service import TokenService
 from app.services.reverse.utils.headers import build_headers
@@ -178,7 +178,7 @@ class AppChatReverse:
 
             async def _do_request():
                 nonlocal active_proxy_key
-                active_proxy_key, base_proxy = get_current_proxy_from("proxy.base_proxy_url")
+                active_proxy_key, base_proxy = await get_token_bound_proxy_from(token, "proxy.base_proxy_url")
                 proxy = None
                 proxies = None
                 if base_proxy:
@@ -239,7 +239,7 @@ class AppChatReverse:
 
             async def _on_retry(attempt: int, status_code: int, error: Exception, delay: float):
                 if active_proxy_key and should_rotate_proxy(status_code):
-                    rotate_proxy(active_proxy_key)
+                    await rotate_proxy_for_token(active_proxy_key, token)
 
             response = await retry_on_status(
                 _do_request,

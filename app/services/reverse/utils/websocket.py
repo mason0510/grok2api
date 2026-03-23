@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from app.core.logger import logger
 from app.core.config import get_config
-from app.core.proxy_pool import get_current_proxy_from, rotate_proxy
+from app.core.proxy_pool import get_token_bound_proxy_from, rotate_proxy_for_token
 
 
 def _default_ssl_context() -> ssl.SSLContext:
@@ -91,8 +91,9 @@ class WebSocketConnection:
 class WebSocketClient:
     """WebSocket client with proxy support."""
 
-    def __init__(self, proxy: Optional[str] = None) -> None:
+    def __init__(self, proxy: Optional[str] = None, token: Optional[str] = None) -> None:
         self._proxy_override = proxy
+        self._token = token
         self._ssl_context = _default_ssl_context()
 
     async def connect(
@@ -101,6 +102,7 @@ class WebSocketClient:
         headers: Optional[Mapping[str, str]] = None,
         timeout: Optional[float] = None,
         ws_kwargs: Optional[Mapping[str, object]] = None,
+        token: Optional[str] = None,
     ) -> WebSocketConnection:
         """Connect to the WebSocket.
         
@@ -117,9 +119,10 @@ class WebSocketClient:
 
         for attempt in range(max_retry + 1):
             active_proxy_key = None
+            bound_token = token or self._token
             proxy_url = self._proxy_override
             if not proxy_url:
-                active_proxy_key, proxy_url = get_current_proxy_from("proxy.base_proxy_url")
+                active_proxy_key, proxy_url = await get_token_bound_proxy_from(bound_token, "proxy.base_proxy_url")
             connector, resolved_proxy = resolve_proxy(proxy_url, self._ssl_context)
             logger.debug(
                 f"WebSocket connect: proxy_url={proxy_url}, resolved_proxy={resolved_proxy}, connector={type(connector).__name__}"
@@ -174,7 +177,7 @@ class WebSocketClient:
                 await session.close()
                 if self._proxy_override or not active_proxy_key or attempt >= max_retry:
                     raise
-                rotate_proxy(active_proxy_key)
+                await rotate_proxy_for_token(active_proxy_key, bound_token)
                 logger.warning(
                     f"WebSocket connect failed via {active_proxy_key}, rotating proxy and retrying ({attempt + 1}/{max_retry})"
                 )

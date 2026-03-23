@@ -171,7 +171,12 @@ def cmd_image(args: argparse.Namespace) -> None:
     full_url = normalize_output_url(first_url, base)
 
     if args.output:
-        _download_file(full_url, Path(args.output), headers=build_download_headers(full_url, args))
+        _download_file(
+            full_url,
+            Path(args.output),
+            headers=build_download_headers(full_url, args),
+            session=session,
+        )
         sys.stdout.write(f"Saved image to {args.output}\n")
     else:
         sys.stdout.write(full_url + "\n")
@@ -210,7 +215,12 @@ def cmd_image_edit(args: argparse.Namespace) -> None:
     full_url = normalize_output_url(first_url, base)
 
     if args.output:
-        _download_file(full_url, Path(args.output), headers=build_download_headers(full_url, args))
+        _download_file(
+            full_url,
+            Path(args.output),
+            headers=build_download_headers(full_url, args),
+            session=session,
+        )
         sys.stdout.write(f"Saved edited image to {args.output}\n")
     else:
         sys.stdout.write(full_url + "\n")
@@ -240,7 +250,12 @@ def cmd_video(args: argparse.Namespace) -> None:
     video_url = normalize_output_url(video_url, base)
 
     if args.output:
-        _download_file(video_url, Path(args.output), headers=build_download_headers(video_url, args))
+        _download_file(
+            video_url,
+            Path(args.output),
+            headers=build_download_headers(video_url, args),
+            session=session,
+        )
         sys.stdout.write(f"Saved video to {args.output}\n")
     else:
         sys.stdout.write(video_url + "\n")
@@ -278,7 +293,12 @@ def cmd_video_from_image(args: argparse.Namespace) -> None:
     video_url = normalize_output_url(video_url, base)
 
     if args.output:
-        _download_file(video_url, Path(args.output), headers=build_download_headers(video_url, args))
+        _download_file(
+            video_url,
+            Path(args.output),
+            headers=build_download_headers(video_url, args),
+            session=session,
+        )
         sys.stdout.write(f"Saved video to {args.output}\n")
     else:
         sys.stdout.write(video_url + "\n")
@@ -301,9 +321,14 @@ def _extract_video_url(data: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _download_file(url: str, path: Path, headers: Optional[Dict[str, str]] = None) -> None:
-    session = create_session(url)
-    resp = session.get(url, headers=headers, stream=True, timeout=600)
+def _download_file(
+    url: str,
+    path: Path,
+    headers: Optional[Dict[str, str]] = None,
+    session: Optional[requests.Session] = None,
+) -> None:
+    active_session = session or create_session(url)
+    resp = active_session.get(url, headers=headers, stream=True, timeout=600)
     resp.raise_for_status()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:

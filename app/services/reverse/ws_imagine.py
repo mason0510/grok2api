@@ -196,6 +196,7 @@ class ImagineWebSocketReverse:
                     "heartbeat": 20,
                     "receive_timeout": stream_timeout,
                 },
+                token=token,
             )
         except Exception as e:
             status = getattr(e, "status", None)

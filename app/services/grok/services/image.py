@@ -238,6 +238,8 @@ class ImageGenerationService:
             enable_nsfw = bool(get_config("image.nsfw"))
         all_images: List[str] = []
         seen = set()
+        rate_limit_failures = 0
+        last_rate_limit_error: Optional[UpstreamException] = None
         expected_per_call = 6
         calls_needed = max(1, int(math.ceil(n / expected_per_call)))
         calls_needed = min(calls_needed, n)
@@ -271,6 +273,9 @@ class ImageGenerationService:
         for batch in results:
             if isinstance(batch, Exception):
                 logger.warning(f"WS batch failed: {batch}")
+                if rate_limited(batch):
+                    rate_limit_failures += 1
+                    last_rate_limit_error = batch
                 continue
             for img in batch:
                 if img not in seen:
@@ -331,6 +336,9 @@ class ImageGenerationService:
                 for batch in extra_results:
                     if isinstance(batch, Exception):
                         logger.warning(f"WS recovery batch failed: {batch}")
+                        if rate_limited(batch):
+                            rate_limit_failures += 1
+                            last_rate_limit_error = batch
                         continue
                     for img in batch:
                         if img not in seen:
@@ -346,6 +354,28 @@ class ImageGenerationService:
                 )
 
         if len(all_images) < n:
+            if rate_limit_failures > 0 and not all_images:
+                logger.warning(
+                    f"Image generation exhausted by rate limits: finals=0/{n}, "
+                    f"rate_limit_failures={rate_limit_failures}"
+                )
+                rate_limit_details = {
+                    "error_code": "rate_limit_exceeded",
+                    "status": 429,
+                    "final_images": len(all_images),
+                    "requested": n,
+                    "rate_limit_failures": rate_limit_failures,
+                }
+                if (
+                    last_rate_limit_error
+                    and isinstance(last_rate_limit_error, UpstreamException)
+                    and last_rate_limit_error.details
+                ):
+                    rate_limit_details.update(last_rate_limit_error.details)
+                raise UpstreamException(
+                    "Image rate limit exceeded",
+                    details=rate_limit_details,
+                )
             logger.error(
                 f"Image generation failed after recovery attempts: finals={len(all_images)}/{n}, "
                 f"blocked_parallel_attempts={int(get_config('image.blocked_parallel_attempts') or 5)}"
