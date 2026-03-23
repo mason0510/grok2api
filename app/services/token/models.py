@@ -60,6 +60,7 @@ class TokenInfo(BaseModel):
         default_factory=lambda: int(datetime.now().timestamp() * 1000)
     )
     last_used_at: Optional[int] = None
+    last_selected_at: Optional[int] = None
     use_count: int = 0
 
     # 失败追踪
@@ -116,6 +117,10 @@ class TokenInfo(BaseModel):
         if consumed_mode:
             return True
         return self.quota > 0
+
+    def mark_selected(self, selection_order: int):
+        """记录本次被调度选中，用于 LRU / 轮询分配。"""
+        self.last_selected_at = int(selection_order)
 
     def enter_cooling(self, reset_consumed: bool = True):
         """进入冷却状态，并在新窗口开始时清空 consumed。"""
@@ -250,10 +255,13 @@ class TokenInfo(BaseModel):
             self.use_count += 1
             self.last_used_at = int(datetime.now().timestamp() * 1000)
 
-    def need_refresh(self, interval_hours: int = 8) -> bool:
+    def need_refresh(self, interval_hours: int = 8, force: bool = False) -> bool:
         """检查是否需要刷新配额"""
         if self.status != TokenStatus.COOLING:
             return False
+
+        if force:
+            return True
 
         if self.last_sync_at is None:
             return True

@@ -674,34 +674,79 @@ class TokenManager:
 
     async def mark_rate_limited(self, token_str: str) -> bool:
         """
-        将 Token 标记为配额耗尽（COOLING）
+        当 Grok API 返回 429 时，先用真实 rate-limits 结果确认是否真的耗尽。
 
-        当 Grok API 返回 429 时调用，将 quota 设为 0 并标记 COOLING，
-        使该 Token 不再被选中，等待下次 Scheduler 刷新恢复。
+        只有确认 remainingTokens == 0（或 remainingQueries == 0）时，
+        才把 token 置为 cooling；否则保留 active，避免把瞬时限流、
+        通道限流、模型限流误判成 token 全局耗尽。
 
         Args:
             token_str: Token 字符串
 
         Returns:
-            是否成功
+            是否确认已进入 cooling
         """
         raw_token = token_str.removeprefix("sso=")
-
+        target_token: Optional[TokenInfo] = None
+        target_pool_name: Optional[str] = None
         for pool in self.pools.values():
             token = pool.get(raw_token)
             if token:
-                old_quota = token.quota
-                token.quota = 0
-                token.enter_cooling()
-                logger.warning(
-                    f"Token {raw_token[:10]}...: marked as rate limited "
-                    f"(quota {old_quota} -> 0, status -> cooling)"
-                )
-                self._track_token_change(token, pool.name, "state")
-                self._schedule_save()
-                return True
+                target_token = token
+                target_pool_name = pool.name
+                break
 
-        logger.warning(f"Token {raw_token[:10]}...: not found for rate limit marking")
+        if not target_token:
+            logger.warning(f"Token {raw_token[:10]}...: not found for rate limit marking")
+            return False
+
+        old_quota = target_token.quota
+        sync_ok = await self.sync_usage(
+            token_str,
+            consume_on_fail=False,
+            is_usage=False,
+        )
+
+        # sync_usage 内部可能因为窗口大小变化而移动池，这里重新定位一次
+        target_token = None
+        target_pool_name = None
+        for pool in self.pools.values():
+            token = pool.get(raw_token)
+            if token:
+                target_token = token
+                target_pool_name = pool.name
+                break
+
+        if not target_token:
+            logger.warning(
+                f"Token {raw_token[:10]}...: disappeared after rate limit confirmation"
+            )
+            return False
+
+        if sync_ok and target_token.quota <= 0:
+            logger.warning(
+                f"Token {raw_token[:10]}...: confirmed exhausted by rate-limits "
+                f"(quota {old_quota} -> {target_token.quota}, status={target_token.status})"
+            )
+            if target_pool_name:
+                self._track_token_change(target_token, target_pool_name, "state")
+            self._schedule_save()
+            return True
+
+        if sync_ok:
+            logger.info(
+                f"Token {raw_token[:10]}...: transient 429 only, keep active "
+                f"(quota now {target_token.quota}, status={target_token.status})"
+            )
+            if target_pool_name:
+                self._track_token_change(target_token, target_pool_name, "usage")
+            self._schedule_save()
+            return False
+
+        logger.warning(
+            f"Token {raw_token[:10]}...: rate-limit confirmation failed, keep current status "
+            f"(quota={target_token.quota}, status={target_token.status})"
+        )
         return False
 
     # ========== 管理功能 ==========
@@ -874,7 +919,7 @@ class TokenManager:
             return []
         return pool.list()
 
-    async def refresh_cooling_tokens(self) -> Dict[str, int]:
+    async def refresh_cooling_tokens(self, force: bool = False) -> Dict[str, int]:
         """
         批量刷新 cooling 状态的 Token 配额
 
@@ -895,7 +940,7 @@ class TokenManager:
                     DEFAULT_REFRESH_INTERVAL_HOURS,
                 )
             for token in pool:
-                if token.need_refresh(interval_hours):
+                if token.need_refresh(interval_hours, force=force):
                     to_refresh.append((pool.name, token))
 
         if not to_refresh:

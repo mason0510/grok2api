@@ -17,7 +17,7 @@ from app.core.logger import logger
 from app.core.storage import DATA_DIR
 from app.core.exceptions import AppException, ErrorType, UpstreamException
 from app.services.grok.utils.process import BaseProcessor
-from app.services.grok.utils.retry import pick_token, rate_limited
+from app.services.grok.utils.retry import pick_token, rate_limited, rate_limit_backoff_seconds
 from app.services.grok.utils.response import make_response_id, make_chat_chunk, wrap_image_content
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.token import EffortType
@@ -109,10 +109,13 @@ class ImageGenerationService:
                             if yielded:
                                 raise
                             await token_mgr.mark_rate_limited(current_token)
+                            delay = rate_limit_backoff_seconds(e)
                             logger.warning(
                                 f"Token {current_token[:10]}... rate limited (429), "
-                                f"trying next token (attempt {attempt + 1}/{max_token_retries})"
+                                f"backing off {delay:.2f}s and trying next token "
+                                f"(attempt {attempt + 1}/{max_token_retries})"
                             )
+                            await asyncio.sleep(delay)
                             continue
                         raise
 
@@ -163,10 +166,13 @@ class ImageGenerationService:
                 last_error = e
                 if rate_limited(e):
                     await token_mgr.mark_rate_limited(current_token)
+                    delay = rate_limit_backoff_seconds(e)
                     logger.warning(
                         f"Token {current_token[:10]}... rate limited (429), "
-                        f"trying next token (attempt {attempt + 1}/{max_token_retries})"
+                        f"backing off {delay:.2f}s and trying next token "
+                        f"(attempt {attempt + 1}/{max_token_retries})"
                     )
+                    await asyncio.sleep(delay)
                     continue
                 raise
 

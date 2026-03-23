@@ -25,7 +25,7 @@ from app.core.logger import logger
 from app.services.grok.services.model import ModelService
 from app.services.grok.utils.download import DownloadService
 from app.services.grok.utils.process import _is_http2_error, _normalize_line, _with_idle_timeout
-from app.services.grok.utils.retry import rate_limited
+from app.services.grok.utils.retry import rate_limited, rate_limit_backoff_seconds
 from app.services.grok.utils.stream import wrap_stream_with_usage
 from app.services.reverse.app_chat import AppChatReverse
 from app.services.reverse.media_post import MediaPostReverse
@@ -1007,6 +1007,12 @@ class VideoService:
             except UpstreamException as e:
                 if rate_limited(e):
                     await token_mgr.mark_rate_limited(token)
+                    delay = rate_limit_backoff_seconds(e)
+                    logger.warning(
+                        f"Video token {token[:10]}... rate limited (429), "
+                        f"backing off {delay:.2f}s before returning error"
+                    )
+                    await asyncio.sleep(delay)
                 raise
 
         async def _collect_chain() -> Dict[str, Any]:
@@ -1103,6 +1109,12 @@ class VideoService:
         except UpstreamException as e:
             if rate_limited(e):
                 await token_mgr.mark_rate_limited(token)
+                delay = rate_limit_backoff_seconds(e)
+                logger.warning(
+                    f"Video token {token[:10]}... rate limited (429), "
+                    f"backing off {delay:.2f}s before returning error"
+                )
+                await asyncio.sleep(delay)
             raise
 
         try:

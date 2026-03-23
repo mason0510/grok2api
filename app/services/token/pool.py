@@ -1,6 +1,5 @@
 """Token 池管理"""
 
-import random
 from typing import Dict, List, Optional, Iterator, Set
 
 from app.services.token.models import TokenInfo, TokenStatus, TokenPoolStats
@@ -13,6 +12,7 @@ class TokenPool:
     def __init__(self, name: str):
         self.name = name
         self._tokens: Dict[str, TokenInfo] = {}
+        self._selection_seq = 0
 
     def add(self, token: TokenInfo):
         """添加 Token"""
@@ -57,61 +57,30 @@ class TokenPool:
             prefer_tags: 优先选择包含这些 tag 的 token（若存在则仅在其子集中选择）
         """
         consumed_mode = self._is_consumed_mode()
+        available = [
+            t
+            for t in self._tokens.values()
+            if t.is_available(consumed_mode=consumed_mode)
+            and (not exclude or t.token not in exclude)
+        ]
 
-        if consumed_mode:
-            # ===== Consumed 模式（新逻辑）=====
-            available = [
-                t
-                for t in self._tokens.values()
-                if t.is_available(consumed_mode=True)
-                and (not exclude or t.token not in exclude)
-            ]
+        if not available:
+            return None
 
-            if not available:
-                return None
+        if prefer_tags:
+            preferred = [t for t in available if prefer_tags.issubset(set(t.tags or []))]
+            if preferred:
+                available = preferred
 
-            # 优先选带指定标签的 token（若存在）
-            if prefer_tags:
-                preferred = [
-                    t for t in available if prefer_tags.issubset(set(t.tags or []))
-                ]
-                if preferred:
-                    available = preferred
+        def _sort_key(token: TokenInfo):
+            last_selected_at = token.last_selected_at or 0
+            fairness_counter = token.consumed if consumed_mode else token.use_count
+            return (last_selected_at, fairness_counter, token.created_at, token.token)
 
-            # 找到最小消耗（优先选择消耗少的）
-            min_consumed = min(t.consumed for t in available)
-            candidates = [t for t in available if t.consumed == min_consumed]
-            return random.choice(candidates)
-
-
-        else:
-            # ===== 默认模式（旧逻辑）=====
-            available = [
-                t
-                for t in self._tokens.values()
-                if t.is_available(consumed_mode=False)
-                and (not exclude or t.token not in exclude)
-            ]
-
-            if not available:
-                return None
-
-            # 优先选带指定标签的 token（若存在）
-            if prefer_tags:
-                preferred = [
-                    t for t in available if prefer_tags.issubset(set(t.tags or []))
-                ]
-                if preferred:
-                    available = preferred
-
-            # 找到最大额度
-            max_quota = max(t.quota for t in available)
-
-            # 筛选最大额度
-            candidates = [t for t in available if t.quota == max_quota]
-
-            # 随机选择
-            return random.choice(candidates)
+        selected = min(available, key=_sort_key)
+        self._selection_seq += 1
+        selected.mark_selected(self._selection_seq)
+        return selected
 
     def count(self) -> int:
         """Token 数量"""
@@ -146,7 +115,10 @@ class TokenPool:
 
     def _rebuild_index(self):
         """重建索引（预留接口，用于加载时调用）"""
-        pass
+        self._selection_seq = max(
+            (token.last_selected_at or 0 for token in self._tokens.values()),
+            default=0,
+        )
 
     def __iter__(self) -> Iterator[TokenInfo]:
         return iter(self._tokens.values())
