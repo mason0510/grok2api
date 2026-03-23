@@ -59,9 +59,13 @@ async def get_video(filename: str):
 
     if await aiofiles.os.path.exists(file_path):
         if await aiofiles.os.path.isfile(file_path):
+            content_type = "video/mp4"
+            if file_path.suffix.lower() == ".webm":
+                content_type = "video/webm"
+
             return FileResponse(
                 file_path,
-                media_type="video/mp4",
+                media_type=content_type,
                 headers={"Cache-Control": "public, max-age=31536000, immutable"},
             )
 

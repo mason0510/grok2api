@@ -68,12 +68,20 @@ class DownloadService:
             asset_url = f"https://assets.grok.com{path_or_url}"
 
         app_url = get_config("app.app_url")
-        if app_url:
-            if parsed and parsed.netloc and parsed.netloc != "assets.grok.com":
-                return asset_url
+        try:
             await self.download_file(asset_url, token, media_type)
-            return f"{app_url.rstrip('/')}/v1/files/{media_type}{path}"
-        return asset_url
+        except Exception as e:
+            host = (parsed.netloc or "").lower() if parsed else ""
+            is_primary_asset_host = (not host) or host == "assets.grok.com"
+            if is_primary_asset_host:
+                raise
+            logger.warning(
+                f"Falling back to upstream asset URL after local cache download failed: {e}"
+            )
+            return asset_url
+
+        prefix = app_url.rstrip("/") if isinstance(app_url, str) and app_url.strip() else ""
+        return f"{prefix}/v1/files/{media_type}{path}"
 
     async def render_image(
         self, url: str, token: str, image_id: str = "image"
